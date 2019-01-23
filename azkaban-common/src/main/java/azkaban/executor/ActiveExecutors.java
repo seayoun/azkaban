@@ -18,6 +18,10 @@ package azkaban.executor;
 
 import com.google.common.collect.ImmutableSet;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import org.apache.log4j.Logger;
@@ -32,6 +36,7 @@ public class ActiveExecutors {
 
   private volatile ImmutableSet<Executor> activeExecutors;
   private final ExecutorLoader executorLoader;
+  private final ReentrantLock lock = new ReentrantLock(false);
 
   @Inject
   public ActiveExecutors(final ExecutorLoader executorLoader) {
@@ -45,13 +50,20 @@ public class ActiveExecutors {
    * fails.
    */
   public void setupExecutors() throws ExecutorManagerException {
-    final ImmutableSet<Executor> newExecutors = loadExecutors();
-    if (newExecutors.isEmpty()) {
-      final String error = "No active executors found";
-      logger.error(error);
-      throw new ExecutorManagerException(error);
-    } else {
-      this.activeExecutors = newExecutors;
+    lock.lock();
+    try {
+      final ImmutableSet<Executor> newExecutors = loadExecutors();
+      if (newExecutors.isEmpty()) {
+        final String error = "No active executors found";
+        logger.error(error);
+        this.activeExecutors = ImmutableSet.<Executor>builder().build();
+        //throw new ExecutorManagerException(error);
+      } else {
+        this.activeExecutors = newExecutors;
+        logger.info(String.format("Current active executor is %s", this.activeExecutors.toString()));
+      }
+    } finally {
+      lock.unlock();
     }
   }
 
@@ -67,6 +79,15 @@ public class ActiveExecutors {
   private ImmutableSet<Executor> loadExecutors() throws ExecutorManagerException {
     logger.info("Initializing executors from database.");
     return ImmutableSet.copyOf(this.executorLoader.fetchActiveExecutors());
+  }
+
+  public void removeActiveExecutor(final Executor deadExecutor) {
+    lock.lock();
+    try {
+      activeExecutors = (ImmutableSet<Executor>) activeExecutors.stream().filter(executor -> executor.equals(deadExecutor)).collect(Collectors.toList());
+    } finally {
+      lock.unlock();
+    }
   }
 
 }

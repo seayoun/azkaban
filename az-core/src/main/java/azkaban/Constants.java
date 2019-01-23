@@ -236,6 +236,10 @@ public class Constants {
 
     // number of rows to be displayed on the executions page.
     public static final String DISPLAY_EXECUTION_PAGE_SIZE = "azkaban.display.execution_page_size";
+
+    //web heartbeat
+    public static final String HEARTBEAT_MAX_TIME = "azkaban.heartbeat.max.time";
+    public static final String HEARTBEAT_CHECK_INTERVAL = "azkaban.heartbeat.check.interval";
   }
 
   public static class FlowProperties {

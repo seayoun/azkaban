@@ -84,6 +84,11 @@ public class ExecutionController extends EventHandler implements ExecutorManager
   }
 
   @Override
+  public void updateExecutorHeartbeat(Executor executor) throws ExecutorManagerException {
+    // do nothing
+  }
+
+  @Override
   public void enableQueueProcessorThread() {
     // Todo: deprecate this method
   }

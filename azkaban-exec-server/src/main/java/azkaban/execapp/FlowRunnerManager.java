@@ -63,13 +63,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -104,12 +98,14 @@ public class FlowRunnerManager implements EventListener,
   private static final String EXECUTOR_THREADPOOL_WORKQUEUE_SIZE = "executor.threadpool.workqueue.size";
   private static final String EXECUTOR_FLOW_THREADS = "executor.flow.threads";
   private static final String FLOW_NUM_JOB_THREADS = "flow.num.job.threads";
+  private static final String EXECUTOR_HEARTBEAT_INTERVAL = "executor.heartbeat.interval";
 
   // recently finished secs to clean up. 1 minute
   private static final int RECENTLY_FINISHED_TIME_TO_LIVE = 60 * 1000;
 
   private static final int DEFAULT_NUM_EXECUTING_FLOWS = 30;
   private static final int DEFAULT_FLOW_NUM_JOB_TREADS = 10;
+  private static final long DEFAULT_EXECUTOR_HEARTBEAT_INTERVAL = 5 * 1000L;
 
   // this map is used to store the flows that have been submitted to
   // the executor service. Once a flow has been submitted, it is either
@@ -130,6 +126,7 @@ public class FlowRunnerManager implements EventListener,
   private final File executionDirectory;
   private final File projectDirectory;
   private final Object executionDirDeletionSync = new Object();
+  private final ScheduledExecutorService heartbeatExecutorService;
 
   private final int numThreads;
   private final int numJobThreadPerFlow;
@@ -146,6 +143,7 @@ public class FlowRunnerManager implements EventListener,
   // date time of the the last flow submitted.
   private long lastFlowSubmittedDate = 0;
 
+  @SuppressWarnings("FutureReturnValueIgnored")
   @Inject
   public FlowRunnerManager(final Props props,
       final ExecutorLoader executorLoader,
@@ -175,6 +173,7 @@ public class FlowRunnerManager implements EventListener,
     this.numThreads = props.getInt(EXECUTOR_FLOW_THREADS, DEFAULT_NUM_EXECUTING_FLOWS);
     this.numJobThreadPerFlow = props.getInt(FLOW_NUM_JOB_THREADS, DEFAULT_FLOW_NUM_JOB_TREADS);
     this.executorService = createExecutorService(this.numThreads);
+    this.heartbeatExecutorService = createHeartbeatExecutorService();
 
     this.executorLoader = executorLoader;
     this.projectLoader = projectLoader;
@@ -215,6 +214,12 @@ public class FlowRunnerManager implements EventListener,
       this.pollingService = new PollingService(this.azkabanProps.getLong
           (ConfigurationKeys.AZKABAN_POLLING_INTERVAL_MS, 1000));
       this.pollingService.start();
+    } else {
+        this.heartbeatExecutorService.scheduleWithFixedDelay(new HeartbeatThread(this.azkabanProps, this.executorLoader),
+                props.getLong(EXECUTOR_HEARTBEAT_INTERVAL, DEFAULT_EXECUTOR_HEARTBEAT_INTERVAL),
+                props.getLong(EXECUTOR_HEARTBEAT_INTERVAL, DEFAULT_EXECUTOR_HEARTBEAT_INTERVAL),
+                TimeUnit.MILLISECONDS);
+        logger.info("Start heartbeat service");
     }
   }
 
@@ -264,6 +269,14 @@ public class FlowRunnerManager implements EventListener,
       return new TrackingThreadPool(nThreads, nThreads, 0L,
           TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(), this);
     }
+  }
+
+  private ScheduledExecutorService createHeartbeatExecutorService() {
+    return Executors.newSingleThreadScheduledExecutor(r -> {
+      Thread t = new Thread(r);
+      t.setName("executor-heartbeat-thread");
+      return t;
+    });
   }
 
   public void setExecutorActive(final boolean isActive, final String host, final int port)
@@ -752,6 +765,8 @@ public class FlowRunnerManager implements EventListener,
         logger.error(e);
       }
     }
+    this.heartbeatExecutorService.shutdown();
+    logger.info("Shutdown heartbeat thread complete.");
     logger.warn("Shutdown FlowRunnerManager complete.");
   }
 

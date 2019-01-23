@@ -87,6 +87,8 @@ public class ExecutorManager extends EventHandler implements
   // 12 weeks
   private static final long DEFAULT_EXECUTION_LOGS_RETENTION_MS = 3 * 4 * 7
       * 24 * 60 * 60 * 1000L;
+  private static final long DEFAULT_HEARTBEAT_MAX_TIME = 30 * 1000L;
+  private static final long DEFAULT_HEARTBEAT_CHECK_INTERVAL = 10 * 1000L;
   private static final Duration RECENTLY_FINISHED_LIFETIME = Duration.ofMinutes(10);
   private static final Logger logger = Logger.getLogger(ExecutorManager.class);
   private final RunningExecutions runningExecutions;
@@ -100,6 +102,7 @@ public class ExecutorManager extends EventHandler implements
   private final ExecutorManagerUpdaterStage updaterStage;
   private final ExecutionFinalizer executionFinalizer;
   private final ActiveExecutors activeExecutors;
+  private final HeartbeatManager heartbeatManager;
   private final ExecutorService executorInfoRefresherService;
   QueuedExecutions queuedFlows;
   File cacheDir;
@@ -132,6 +135,7 @@ public class ExecutorManager extends EventHandler implements
     this.maxConcurrentRunsOneFlow = getMaxConcurrentRunsOneFlow(azkProps);
     this.cleanerThread = createCleanerThread();
     this.executorInfoRefresherService = createExecutorInfoRefresherService();
+    this.heartbeatManager = createHeartbeatManager(azkProps);
   }
 
   private int getMaxConcurrentRunsOneFlow(final Props azkProps) {
@@ -145,6 +149,12 @@ public class ExecutorManager extends EventHandler implements
     final long executionLogsRetentionMs = this.azkProps.getLong("execution.logs.retention.ms",
         DEFAULT_EXECUTION_LOGS_RETENTION_MS);
     return new CleanerThread(executionLogsRetentionMs);
+  }
+
+  private HeartbeatManager createHeartbeatManager(final Props azkProps) {
+    return new HeartbeatManager(activeExecutors, executorLoader,
+            azkProps.getLong(ConfigurationKeys.HEARTBEAT_MAX_TIME, DEFAULT_HEARTBEAT_MAX_TIME),
+            azkProps.getLong(ConfigurationKeys.HEARTBEAT_CHECK_INTERVAL, DEFAULT_HEARTBEAT_CHECK_INTERVAL));
   }
 
   void initialize() throws ExecutorManagerException {
@@ -166,6 +176,7 @@ public class ExecutorManager extends EventHandler implements
 
   public void start() throws ExecutorManagerException {
     initialize();
+    this.heartbeatManager.start();
     this.updaterThread.start();
     this.cleanerThread.start();
     this.queueProcessor.start();
@@ -228,6 +239,7 @@ public class ExecutorManager extends EventHandler implements
   public void setupExecutors() throws ExecutorManagerException {
     checkMultiExecutorMode();
     this.activeExecutors.setupExecutors();
+    this.heartbeatManager.setup(System.currentTimeMillis());
   }
 
   // TODO Enforced for now to ensure that users migrate to multi-executor mode acknowledgingly.
@@ -286,6 +298,15 @@ public class ExecutorManager extends EventHandler implements
       if (wasSuccess) {
         this.lastSuccessfulExecutorInfoRefresh = System.currentTimeMillis();
       }
+    }
+  }
+
+  @Override
+  public void updateExecutorHeartbeat(Executor executor) throws ExecutorManagerException {
+    if (!executor.isActive()) {
+      logger.warn(String.format("executor is unActive, executor info : %s", executor.toString()));
+    } else {
+      this.heartbeatManager.updateExecutorHeartbeat(executor, System.currentTimeMillis());
     }
   }
 
@@ -1079,6 +1100,7 @@ public class ExecutorManager extends EventHandler implements
   public void shutdown() {
     this.queueProcessor.shutdown();
     this.updaterThread.shutdown();
+    this.heartbeatManager.shutdown();
   }
 
   @Override
@@ -1141,6 +1163,13 @@ public class ExecutorManager extends EventHandler implements
   @VisibleForTesting
   void setSleepAfterDispatchFailure(final Duration sleepAfterDispatchFailure) {
     this.sleepAfterDispatchFailure = sleepAfterDispatchFailure;
+  }
+
+  /**
+   * update executor heartbeat time
+   */
+  public void updateHeartbeat(Executor executor, long heartbeatTime) {
+
   }
 
   /*

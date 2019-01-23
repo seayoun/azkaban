@@ -113,7 +113,7 @@ public class ExecutorApiGateway {
   /*
    * Call executor and return raw json string.
    */
-  private String callForJsonString(final String host, final int port, final String path,
+  public String callForJsonString(final String host, final int port, final String path,
       List<Pair<String, String>> paramList) throws IOException {
     if (paramList == null) {
       paramList = new ArrayList<>();

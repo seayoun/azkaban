@@ -164,4 +164,11 @@ public interface ExecutorManagerAdapter {
    * Disable flow dispatching in QueueProcessor
    */
   public void disableQueueProcessorThread() throws ExecutorManagerException;
+
+  /**
+   * update executor heartbeat time
+   * @param executor
+   * @throws ExecutorManagerException
+   */
+  public void updateExecutorHeartbeat(Executor executor) throws ExecutorManagerException;
 }

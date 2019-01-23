@@ -35,6 +35,7 @@ import azkaban.execapp.metric.NumQueuedFlowMetric;
 import azkaban.execapp.metric.NumRunningFlowMetric;
 import azkaban.execapp.metric.NumRunningJobMetric;
 import azkaban.executor.Executor;
+import azkaban.executor.ExecutorApiGateway;
 import azkaban.executor.ExecutorLoader;
 import azkaban.executor.ExecutorManagerException;
 import azkaban.jmx.JmxJettyServer;
